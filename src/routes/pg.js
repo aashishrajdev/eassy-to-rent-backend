@@ -342,75 +342,30 @@
 const express = require('express');
 const router = express.Router();
 
-// Import model
-const PGListing = require('../models/PGListing');
+const pgController = require('../controllers/pgController');
+const { protect, adminOnly } = require('../middleware/authMiddleware');
 
-// Get all PG listings
-router.get('/', async (req, res) => {
-  try {
-    console.log('📋 GET /api/pg');
-    
-    const listings = await PGListing.find().sort({ createdAt: -1 });
-    
-    res.json({
-      success: true,
-      count: listings.length,
-      data: listings
-    });
-    
-  } catch (error) {
-    console.error('❌ Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error'
-    });
-  }
-});
+// Public
+router.get('/', pgController.getPGListings);
+router.get('/search', pgController.searchPGListings);
+router.get('/:id/detail', pgController.getPGDetail);
+router.get('/:id', pgController.getPGListing);
 
-// Create PG listing
-router.post('/', async (req, res) => {
-  try {
-    console.log('➕ POST /api/pg:', req.body);
-    
-    // Validate
-    if (!req.body.name || !req.body.city || !req.body.price) {
-      return res.status(400).json({
-        success: false,
-        message: 'Name, city and price are required'
-      });
-    }
-    
-    const listingData = {
-      name: req.body.name,
-      description: req.body.description || '',
-      city: req.body.city,
-      locality: req.body.locality || '',
-      address: req.body.address || '',
-      price: Number(req.body.price),
-      type: req.body.type || 'boys',
-      images: req.body.images || [],
-      amenities: req.body.amenities || []
-    };
-    
-    const newListing = new PGListing(listingData);
-    const savedListing = await newListing.save();
-    
-    console.log('✅ Saved:', savedListing._id);
-    
-    res.status(201).json({
-      success: true,
-      message: 'PG listing created',
-      data: savedListing
-    });
-    
-  } catch (error) {
-    console.error('❌ Error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to create listing',
-      error: error.message
-    });
-  }
-});
+// Wishlist
+router.get('/wishlist', protect, pgController.getWishlist);
+router.post('/:id/wishlist', protect, pgController.addToWishlist);
+router.delete('/:id/wishlist', protect, pgController.removeFromWishlist);
+
+// Compare
+router.get('/compare', protect, pgController.getCompareList);
+router.post('/:id/compare', protect, pgController.addToCompare);
+router.delete('/:id/compare', protect, pgController.removeFromCompare);
+
+// Admin
+router.get('/admin/stats', protect, adminOnly, pgController.getStats);
+router.post('/', protect, adminOnly, pgController.createPGListing);
+router.put('/:id', protect, adminOnly, pgController.updatePGListing);
+router.delete('/:id', protect, adminOnly, pgController.deletePGListing);
+router.patch('/:id/toggle-status', protect, adminOnly, pgController.toggleStatus);
 
 module.exports = router;

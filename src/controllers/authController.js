@@ -1,46 +1,66 @@
 const User = require('../models/User');
 const { generateToken } = require('../utils/generateToken');
+const { successResponse, errorResponse } = require('../utils/response');
 
 // @desc    Register user
 // @route   POST /api/auth/register
 // @access  Public
-exports.register = async (req, res) => {
+exports.register = async (req, res, next) => {
   try {
-    console.log('Register request received:', req.body);
+    const rawName = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+    const rawEmail =
+      typeof req.body.email === 'string' ? req.body.email.toLowerCase().trim() : '';
+    const rawPassword =
+      typeof req.body.password === 'string' ? req.body.password.trim() : '';
+    const role = req.body.role || 'user';
+    const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : undefined;
 
-    const { name, email, password, role = 'user', phone } = req.body;
+    // Basic validation
+    if (!rawName || !rawEmail || !rawPassword) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Please provide name, email and password',
+      });
+    }
 
-    // Validation
-    if (!name || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide name, email and password'
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(rawEmail)) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Please provide a valid email address',
+      });
+    }
+
+    if (rawPassword.length < 8) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Password must be at least 8 characters long',
       });
     }
 
     // Check if user exists
-    const userExists = await User.findOne({ email: email.toLowerCase() });
+    const userExists = await User.findOne({ email: rawEmail });
     if (userExists) {
-      return res.status(400).json({
-        success: false,
-        message: 'User already exists with this email'
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'User already exists with this email',
       });
     }
 
     // Create user
     const user = await User.create({
-      name,
-      email: email.toLowerCase(),
-      password,
+      name: rawName,
+      email: rawEmail,
+      password: rawPassword,
       role,
-      phone
+      phone,
     });
 
     // Generate token
     const token = generateToken(user._id, user.role);
 
-    res.status(201).json({
-      success: true,
+    return successResponse(res, {
+      statusCode: 201,
       message: 'User registered successfully',
       data: {
         _id: user._id,
@@ -48,61 +68,56 @@ exports.register = async (req, res) => {
         email: user.email,
         role: user.role,
         phone: user.phone,
-        token: token
-      }
+        token,
+      },
     });
-
   } catch (error) {
-    console.error('Register error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error during registration',
-      error: error.message
-    });
+    return next(error);
   }
 };
 
 // @desc    Login user
 // @route   POST /api/auth/login
 // @access  Public
-exports.login = async (req, res) => {
+exports.login = async (req, res, next) => {
   try {
-    console.log('Login request received:', req.body);
-
-    const { email, password } = req.body;
+    const rawEmail =
+      typeof req.body.email === 'string' ? req.body.email.toLowerCase().trim() : '';
+    const rawPassword =
+      typeof req.body.password === 'string' ? req.body.password.trim() : '';
 
     // Validation
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide email and password'
+    if (!rawEmail || !rawPassword) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Please provide email and password',
       });
     }
 
     // Check for user
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+    const user = await User.findOne({ email: rawEmail }).select('+password');
 
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
+      return errorResponse(res, {
+        statusCode: 401,
+        message: 'Invalid email or password',
       });
     }
 
     // Check password
-    const isPasswordMatch = await user.matchPassword(password);
+    const isPasswordMatch = await user.comparePassword(password);
     if (!isPasswordMatch) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
+      return errorResponse(res, {
+        statusCode: 401,
+        message: 'Invalid email or password',
       });
     }
 
     // Check if user is active
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Account is deactivated. Please contact support.'
+    if (user.status !== 'active') {
+      return errorResponse(res, {
+        statusCode: 403,
+        message: 'Account is not active. Please contact support.',
       });
     }
 
@@ -113,8 +128,7 @@ exports.login = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
-    res.json({
-      success: true,
+    return successResponse(res, {
       message: 'Login successful',
       data: {
         _id: user._id,
@@ -122,70 +136,58 @@ exports.login = async (req, res) => {
         email: user.email,
         role: user.role,
         phone: user.phone,
-        token: token,
-        lastLogin: user.lastLogin
-      }
+        token,
+        lastLogin: user.lastLogin,
+      },
     });
-
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error during login',
-      error: error.message
-    });
+    return next(error);
   }
 };
 
 // @desc    Get user profile
 // @route   GET /api/auth/profile
 // @access  Private
-exports.getProfile = async (req, res) => {
+exports.getProfile = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id);
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
+      return errorResponse(res, {
+        statusCode: 404,
+        message: 'User not found',
       });
     }
 
-    res.json({
-      success: true,
+    return successResponse(res, {
+      message: 'Profile fetched successfully',
       data: {
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
         phone: user.phone,
-        isActive: user.isActive,
+        status: user.status,
         createdAt: user.createdAt,
-        lastLogin: user.lastLogin
-      }
+        lastLogin: user.lastLogin,
+      },
     });
-
   } catch (error) {
-    console.error('Get profile error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error',
-      error: error.message
-    });
+    return next(error);
   }
 };
 
 // @desc    Update user profile
 // @route   PUT /api/auth/profile
 // @access  Private
-exports.updateProfile = async (req, res) => {
+exports.updateProfile = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id);
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
+      return errorResponse(res, {
+        statusCode: 404,
+        message: 'User not found',
       });
     }
 
@@ -204,8 +206,7 @@ exports.updateProfile = async (req, res) => {
     // Generate new token if email was changed
     const token = generateToken(updatedUser._id, updatedUser.role);
 
-    res.json({
-      success: true,
+    return successResponse(res, {
       message: 'Profile updated successfully',
       data: {
         _id: updatedUser._id,
@@ -213,37 +214,29 @@ exports.updateProfile = async (req, res) => {
         email: updatedUser.email,
         role: updatedUser.role,
         phone: updatedUser.phone,
-        token: token
-      }
+        token,
+      },
     });
-
   } catch (error) {
-    console.error('Update profile error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error',
-      error: error.message
-    });
+    return next(error);
   }
 };
 
 // @desc    Create default admin user
 // @route   POST /api/auth/init-admin
 // @access  Public (only for initial setup - disable in production)
-exports.createDefaultAdmin = async (req, res) => {
+exports.createDefaultAdmin = async (req, res, next) => {
   try {
-    console.log('Creating default admin...');
-
     // Check if admin already exists
     const adminExists = await User.findOne({ role: 'admin' });
     if (adminExists) {
-      return res.status(400).json({
-        success: false,
+      return errorResponse(res, {
+        statusCode: 400,
         message: 'Admin user already exists',
-        admin: {
+        errors: {
           email: adminExists.email,
-          role: adminExists.role
-        }
+          role: adminExists.role,
+        },
       });
     }
 
@@ -259,61 +252,48 @@ exports.createDefaultAdmin = async (req, res) => {
     // Generate token
     const token = generateToken(admin._id, admin.role);
 
-    console.log('✅ Default admin created:', admin.email);
-
-    res.status(201).json({
-      success: true,
+    return successResponse(res, {
+      statusCode: 201,
       message: 'Default admin created successfully',
       data: {
         _id: admin._id,
         name: admin.name,
         email: admin.email,
         role: admin.role,
-        token: token
-      }
+        token,
+      },
     });
-
   } catch (error) {
-    console.error('Create admin error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create default admin',
-      error: error.message
-    });
+    return next(error);
   }
 };
 
 // @desc    Get all users (admin only)
 // @route   GET /api/auth/users
 // @access  Private/Admin
-exports.getUsers = async (req, res) => {
+exports.getUsers = async (req, res, next) => {
   try {
     const users = await User.find({}).select('-password');
-    
-    res.json({
-      success: true,
-      count: users.length,
-      data: users
+    return successResponse(res, {
+      message: 'Users fetched successfully',
+      data: {
+        count: users.length,
+        items: users,
+      },
     });
-
   } catch (error) {
-    console.error('Get users error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error',
-      error: error.message
-    });
+    return next(error);
   }
 };
 
 // @desc    Debug endpoint to check authentication
 // @route   GET /api/auth/debug
 // @access  Public
-exports.debugAuth = (req, res) => {
-  res.json({
-    success: true,
+exports.debugAuth = (req, res) =>
+  successResponse(res, {
     message: 'Auth debug endpoint',
-    headers: req.headers,
-    timestamp: new Date().toISOString()
+    data: {
+      headers: req.headers,
+      timestamp: new Date().toISOString(),
+    },
   });
-};

@@ -44,6 +44,18 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  wishlist: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PGListing',
+    }
+  ],
+  compare: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PGListing',
+    }
+  ],
   createdAt: {
     type: Date,
     default: Date.now
@@ -54,9 +66,17 @@ const userSchema = new mongoose.Schema({
   }
 });
 
-// Update timestamps on save
-userSchema.pre('save', function(next) {
+// Hash password & update timestamps on save
+userSchema.pre('save', async function (next) {
   this.updatedAt = Date.now();
+
+  if (!this.isModified('password')) {
+    return next();
+  }
+
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+
   next();
 });
 
