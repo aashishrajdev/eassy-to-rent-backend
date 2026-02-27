@@ -9,7 +9,7 @@ const PGListingSchema = new mongoose.Schema({
   },
   slug: {
     type: String,
-    unique: true,
+    unique: true,  // ✅ This creates index automatically
     lowercase: true,
     trim: true
   },
@@ -166,14 +166,21 @@ PGListingSchema.pre('save', function(next) {
 });
 
 // Index for faster queries
-PGListingSchema.index({ name: 1 });
-PGListingSchema.index({ slug: 1 });
-PGListingSchema.index({ city: 1 });
-PGListingSchema.index({ type: 1 });
-PGListingSchema.index({ price: 1 });
-PGListingSchema.index({ published: 1 });
-PGListingSchema.index({ location: '2dsphere' });
-PGListingSchema.index({ name: 'text', description: 'text', address: 'text', city: 'text' });
+// ❌ REMOVED: PGListingSchema.index({ slug: 1 }); // Duplicate - already covered by unique:true
+
+// ✅ Keep these indexes (they're not duplicates)
+PGListingSchema.index({ name: 1 });              // For searching by name
+PGListingSchema.index({ city: 1 });               // For filtering by city
+PGListingSchema.index({ type: 1 });                // For filtering by type
+PGListingSchema.index({ price: 1 });               // For sorting by price
+PGListingSchema.index({ published: 1 });           // For filtering published listings
+PGListingSchema.index({ location: '2dsphere' });   // For geo queries
+PGListingSchema.index({ 
+  name: 'text', 
+  description: 'text', 
+  address: 'text', 
+  city: 'text' 
+});  // For text search
 
 const PGListing = mongoose.model('PGListing', PGListingSchema);
 
