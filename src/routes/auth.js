@@ -1,9 +1,20 @@
 const express = require('express');
 const router = express.Router();
 const nodemailer = require('nodemailer');
+const authController = require('../controllers/authController'); // Import the controller
 
-// ================= OTP SYSTEM =================
+// ================= AUTH ROUTES (from controller) =================
+router.post('/register', authController.register);
+router.post('/login', authController.login);
+router.post('/init-admin', authController.createDefaultAdmin);
+router.get('/profile', authController.getProfile);
+router.put('/profile', authController.updateProfile);
+router.get('/users', authController.getUsers);
+router.get('/debug', authController.debugAuth);
 
+// ================= OTP SYSTEM (COMMENTED FOR LATER USE) =================
+
+/*
 // In-memory store
 const otpStore = new Map();
 
@@ -208,5 +219,17 @@ router.post('/test-send-otp', async (req, res) => {
     receivedEmail: req.body.email 
   });
 });
+*/
+
+console.log('🔥🔥🔥 AUTH ROUTES FILE IS BEING LOADED! 🔥🔥🔥');
+console.log('Routes registered in this file:');
+console.log('  - POST /register');
+console.log('  - POST /login');
+console.log('  - POST /init-admin');
+console.log('  - GET /profile');
+console.log('  - PUT /profile');
+console.log('  - GET /users');
+console.log('  - GET /debug');
+console.log('  - (OTP routes are commented out for now)');
 
 module.exports = router;
