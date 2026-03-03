@@ -381,6 +381,28 @@ const express = require('express');
 const router = express.Router();
 const PGListing = require('../models/PGListing');
 const { uploadImage, uploadGalleryImages } = require('../utils/cloudinary');
+const { protect, ownerOrAdmin } = require('../middleware/authMiddleware');
+
+// @desc    Get owner's own listings
+// @route   GET /api/pg/my-listings
+// @access  Private (owner/admin)
+router.get('/my-listings', protect, ownerOrAdmin, async (req, res) => {
+  try {
+    const listings = await PGListing.find({ ownerId: req.user._id.toString() })
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: {
+        items: listings,
+        total: listings.length,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Error fetching owner listings:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+});
 
 // @desc    Get all PG listings (public - only published)
 // @route   GET /api/pg
@@ -542,13 +564,19 @@ router.get('/slug/:slug', async (req, res) => {
 
 // @desc    Create new PG listing
 // @route   POST /api/pg
-// @access  Public (for now - add auth later)
-router.post('/', async (req, res) => {
+// @access  Private (owner/admin)
+router.post('/', protect, ownerOrAdmin, async (req, res) => {
   try {
     console.log('📥 Received POST request to create PG');
     console.log('📦 Request body:', JSON.stringify(req.body, null, 2));
     
     const pgData = { ...req.body };
+    
+    // Auto-set owner info from authenticated user
+    pgData.ownerId = req.user._id.toString();
+    if (!pgData.ownerName) pgData.ownerName = req.user.name;
+    if (!pgData.ownerEmail) pgData.ownerEmail = req.user.email;
+    if (!pgData.ownerPhone) pgData.ownerPhone = req.user.phone || '';
     
     // Handle main image upload if it's base64
     if (pgData.images && pgData.images.length > 0) {

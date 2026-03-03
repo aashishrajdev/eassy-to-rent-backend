@@ -1,16 +1,25 @@
 const express = require('express');
 const router = express.Router();
 const nodemailer = require('nodemailer');
-const authController = require('../controllers/authController'); // Import the controller
+const authController = require('../controllers/authController');
+const { protect, adminOnly } = require('../middleware/authMiddleware');
 
-// ================= AUTH ROUTES (from controller) =================
+// ================= PUBLIC AUTH ROUTES =================
 router.post('/register', authController.register);
 router.post('/login', authController.login);
 router.post('/init-admin', authController.createDefaultAdmin);
-router.get('/profile', authController.getProfile);
-router.put('/profile', authController.updateProfile);
-router.get('/users', authController.getUsers);
+router.post('/reset-admin', authController.resetAdmin);
 router.get('/debug', authController.debugAuth);
+
+// ================= PROTECTED ROUTES =================
+router.get('/profile', protect, authController.getProfile);
+router.put('/profile', protect, authController.updateProfile);
+
+// ================= ADMIN ROUTES =================
+router.get('/users', protect, adminOnly, authController.getUsers);
+router.get('/users/:id', protect, adminOnly, authController.getUserById);
+router.delete('/users/:id', protect, adminOnly, authController.deleteUser);
+router.put('/users/:id/status', protect, adminOnly, authController.updateUserStatus);
 
 // ================= OTP SYSTEM (COMMENTED FOR LATER USE) =================
 
