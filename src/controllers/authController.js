@@ -12,7 +12,7 @@ exports.register = async (req, res, next) => {
       typeof req.body.email === 'string' ? req.body.email.toLowerCase().trim() : '';
     const rawPassword =
       typeof req.body.password === 'string' ? req.body.password.trim() : '';
-    const role = req.body.role || 'user';
+    const role = ['user', 'owner'].includes(req.body.role) ? req.body.role : 'user';
     const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : undefined;
 
     // Basic validation
@@ -105,7 +105,7 @@ exports.login = async (req, res, next) => {
     }
 
     // Check password
-    const isPasswordMatch = await user.comparePassword(password);
+    const isPasswordMatch = await user.comparePassword(rawPassword);
     if (!isPasswordMatch) {
       return errorResponse(res, {
         statusCode: 401,
@@ -114,10 +114,17 @@ exports.login = async (req, res, next) => {
     }
 
     // Check if user is active
-    if (user.status !== 'active') {
+    if (user.status === 'suspended') {
       return errorResponse(res, {
         statusCode: 403,
-        message: 'Account is not active. Please contact support.',
+        message: 'Your account has been suspended by an administrator. Please contact support.',
+      });
+    }
+
+    if (user.status === 'inactive') {
+      return errorResponse(res, {
+        statusCode: 403,
+        message: 'Your account is inactive. Please contact support to reactivate.',
       });
     }
 
@@ -240,13 +247,12 @@ exports.createDefaultAdmin = async (req, res, next) => {
       });
     }
 
-    // Create admin user
+    // Create admin user — use ADMIN_EMAIL / ADMIN_PASSWORD from .env
     const admin = await User.create({
       name: 'Admin User',
-      email: process.env.DEFAULT_ADMIN_EMAIL || 'admin@pgfinder.com',
-      password: process.env.DEFAULT_ADMIN_PASSWORD || 'admin123',
+      email: process.env.ADMIN_EMAIL,
+      password: process.env.ADMIN_PASSWORD,
       role: 'admin',
-      phone: '+919876543210'
     });
 
     // Generate token
@@ -262,6 +268,35 @@ exports.createDefaultAdmin = async (req, res, next) => {
         role: admin.role,
         token,
       },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// @desc    Reset admin password to what's in .env
+// @route   POST /api/auth/reset-admin
+// @access  Public (one-time setup helper)
+exports.resetAdmin = async (req, res, next) => {
+  try {
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@pgfinder.com';
+    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@9876#Secure';
+
+    const admin = await User.findOne({ email: adminEmail, role: 'admin' });
+    if (!admin) {
+      return errorResponse(res, {
+        statusCode: 404,
+        message: 'Admin user not found',
+      });
+    }
+
+    // Set the new password (the pre-save hook in the User model will hash it)
+    admin.password = adminPassword;
+    await admin.save();
+
+    return successResponse(res, {
+      message: 'Admin password reset successfully',
+      data: { email: admin.email },
     });
   } catch (error) {
     return next(error);
@@ -297,3 +332,115 @@ exports.debugAuth = (req, res) =>
       timestamp: new Date().toISOString(),
     },
   });
+
+// @desc    Get single user by ID (admin only)
+// @route   GET /api/auth/users/:id
+// @access  Private/Admin
+exports.getUserById = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id).select('-password');
+
+    if (!user) {
+      return errorResponse(res, {
+        statusCode: 404,
+        message: 'User not found',
+      });
+    }
+
+    return successResponse(res, {
+      message: 'User fetched successfully',
+      data: user,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// @desc    Delete user (admin only)
+// @route   DELETE /api/auth/users/:id
+// @access  Private/Admin
+exports.deleteUser = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return errorResponse(res, {
+        statusCode: 404,
+        message: 'User not found',
+      });
+    }
+
+    // Prevent admin from deleting themselves
+    if (user._id.toString() === req.user._id.toString()) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Admin cannot delete their own account',
+      });
+    }
+
+    // Prevent deleting other admins
+    if (user.role === 'admin') {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Cannot delete another admin account',
+      });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+
+    return successResponse(res, {
+      message: `User "${user.name}" deleted successfully`,
+      data: { deletedId: req.params.id },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// @desc    Update user status (admin only)
+// @route   PUT /api/auth/users/:id/status
+// @access  Private/Admin
+exports.updateUserStatus = async (req, res, next) => {
+  try {
+    const { status } = req.body;
+
+    if (!['active', 'inactive', 'suspended'].includes(status)) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Invalid status. Must be: active, inactive, or suspended',
+      });
+    }
+
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return errorResponse(res, {
+        statusCode: 404,
+        message: 'User not found',
+      });
+    }
+
+    // Prevent admin from changing their own status
+    if (user._id.toString() === req.user._id.toString()) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Admin cannot change their own status',
+      });
+    }
+
+    user.status = status;
+    await user.save();
+
+    return successResponse(res, {
+      message: `User status updated to "${status}"`,
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        status: user.status,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
