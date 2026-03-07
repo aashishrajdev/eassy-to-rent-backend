@@ -102,10 +102,10 @@ app.use(globalLimiter);
 // Stricter rate limiter for auth routes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 login/register attempts per windowMs
+  max: 20, // limit each IP to 20 auth attempts per windowMs
   standardHeaders: true,
   legacyHeaders: false,
-  message: 'Too many authentication attempts, please try again after 15 minutes',
+  message: { success: false, message: 'Too many authentication attempts, please try again after 15 minutes', data: {} },
   skipSuccessfulRequests: true, // Don't count successful requests
 });
 
