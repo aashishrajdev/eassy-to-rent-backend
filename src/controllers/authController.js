@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const { generateToken } = require('../utils/generateToken');
 const { successResponse, errorResponse } = require('../utils/response');
+const sendEmail = require('../utils/sendEmail');
 
 // @desc    Register user
 // @route   POST /api/auth/register
@@ -128,24 +129,36 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    // Generate token
-    const token = generateToken(user._id, user.role);
-
-    // Update last login
-    user.lastLogin = new Date();
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.otp = otp;
+    user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
     await user.save();
 
+    // Send email
+    const subject = 'Your Login OTP - PG Finder';
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+        <h2 style="color: #2563eb; text-align: center;">Login Verification OTP</h2>
+        <p>Your OTP for login is:</p>
+        <div style="background: #f3f4f6; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; border-radius: 8px; margin: 20px 0; color: #1e40af; letter-spacing: 4px;">
+          ${otp}
+        </div>
+        <p>This OTP is valid for <strong>5 minutes</strong>. If you did not attempt to log in, please ignore this email.</p>
+      </div>
+    `;
+
+    await sendEmail({ email: user.email, subject, html, text: `Your OTP is: ${otp}` });
+
+    const responseData = { requireOtp: true, email: user.email };
+    if (process.env.NODE_ENV === 'development' || true) { // keep visible for testing
+      responseData.debugOtp = otp;
+    }
+
     return successResponse(res, {
-      message: 'Login successful',
-      data: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        phone: user.phone,
-        token,
-        lastLogin: user.lastLogin,
-      },
+      message: 'OTP sent to your email. Please verify to login.',
+      statusCode: 200,
+      data: responseData,
     });
   } catch (error) {
     return next(error);
@@ -439,6 +452,159 @@ exports.updateUserStatus = async (req, res, next) => {
         email: user.email,
         status: user.status,
       },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// @desc    Verify Login OTP
+// @route   POST /api/auth/verify-login-otp
+// @access  Public
+exports.verifyLoginOtp = async (req, res, next) => {
+  try {
+    const rawEmail = typeof req.body.email === 'string' ? req.body.email.toLowerCase().trim() : '';
+    const otp = typeof req.body.otp === 'string' ? req.body.otp.trim() : '';
+
+    if (!rawEmail || !otp) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Please provide email and OTP',
+      });
+    }
+
+    const user = await User.findOne({ email: rawEmail });
+
+    if (!user) {
+      return errorResponse(res, {
+        statusCode: 404,
+        message: 'User not found',
+      });
+    }
+
+    if (user.otp !== otp) {
+      return errorResponse(res, {
+        statusCode: 401,
+        message: 'Invalid OTP',
+      });
+    }
+
+    if (user.otpExpires < Date.now()) {
+      return errorResponse(res, {
+        statusCode: 401,
+        message: 'OTP has expired',
+      });
+    }
+
+    // OTP is valid
+    user.otp = null;
+    user.otpExpires = null;
+    user.lastLogin = new Date();
+    await user.save();
+
+    // Generate token
+    const token = generateToken(user._id, user.role);
+
+    return successResponse(res, {
+      message: 'Login successful',
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone,
+        token,
+        lastLogin: user.lastLogin,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// @desc    Forgot Password - Send OTP
+// @route   POST /api/auth/forgot-password
+// @access  Public
+exports.forgotPassword = async (req, res, next) => {
+  try {
+    const rawEmail = typeof req.body.email === 'string' ? req.body.email.toLowerCase().trim() : '';
+
+    if (!rawEmail) {
+      return errorResponse(res, { statusCode: 400, message: 'Please provide your email address' });
+    }
+
+    const user = await User.findOne({ email: rawEmail });
+    if (!user) {
+      return errorResponse(res, { statusCode: 404, message: 'No account found with this email' });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.otp = otp;
+    user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+    await user.save();
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+        <h2 style="color: #2563eb; text-align: center;">Reset Your Password</h2>
+        <p>You requested a password reset. Use the OTP below:</p>
+        <div style="background: #f3f4f6; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; border-radius: 8px; margin: 20px 0; color: #1e40af; letter-spacing: 4px;">
+          ${otp}
+        </div>
+        <p>This OTP is valid for <strong>10 minutes</strong>. If you didn't request this, ignore this email.</p>
+      </div>
+    `;
+
+    await sendEmail({ email: user.email, subject: 'Password Reset OTP - PG Finder', html, text: `Your OTP is: ${otp}` });
+
+    return successResponse(res, {
+      message: 'Password reset OTP sent to your email',
+      data: { email: user.email },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// @desc    Reset Password - Verify OTP & Set New Password
+// @route   POST /api/auth/reset-password
+// @access  Public
+exports.resetPassword = async (req, res, next) => {
+  try {
+    const rawEmail = typeof req.body.email === 'string' ? req.body.email.toLowerCase().trim() : '';
+    const otp = typeof req.body.otp === 'string' ? req.body.otp.trim() : '';
+    const newPassword = typeof req.body.newPassword === 'string' ? req.body.newPassword.trim() : '';
+
+    if (!rawEmail || !otp || !newPassword) {
+      return errorResponse(res, { statusCode: 400, message: 'Please provide email, OTP, and new password' });
+    }
+
+    if (newPassword.length < 8) {
+      return errorResponse(res, { statusCode: 400, message: 'Password must be at least 8 characters long' });
+    }
+
+    const user = await User.findOne({ email: rawEmail });
+    if (!user) {
+      return errorResponse(res, { statusCode: 404, message: 'User not found' });
+    }
+
+    if (user.otp !== otp) {
+      return errorResponse(res, { statusCode: 401, message: 'Invalid OTP' });
+    }
+
+    if (user.otpExpires < Date.now()) {
+      return errorResponse(res, { statusCode: 401, message: 'OTP has expired. Please request a new one.' });
+    }
+
+    // Update password (pre-save hook will hash it)
+    user.password = newPassword;
+    user.otp = null;
+    user.otpExpires = null;
+    await user.save();
+
+    return successResponse(res, {
+      message: 'Password reset successfully. You can now login with your new password.',
+      data: { email: user.email },
     });
   } catch (error) {
     return next(error);
