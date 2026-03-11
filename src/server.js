@@ -83,7 +83,7 @@ const startServer = (port) => {
 
   return server;
 };
-
+console.log(  PORT);
 // Start the server
 startServer(PORT);
 
