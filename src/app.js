@@ -170,21 +170,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -208,7 +193,7 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
 
-// SIMPLE CORS CONFIGURATION - Replace everything above with this
+// SIMPLE CORS - This is the key change
 app.use(cors({
   origin: true, // Allow all origins
   credentials: true,
@@ -218,6 +203,32 @@ app.use(cors({
 
 // Handle preflight requests
 app.options('*', cors());
+
+// Add these headers to be absolutely sure
+app.use((req, res, next) => {
+  const allowedOrigins = [
+    'https://www.easytorent.in',
+    'https://easytorent.in',
+    'https://eassy-to-rent-startup.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ];
+  
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  
+  next();
+});
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -232,7 +243,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Rate limiting
+// Rate limiting - more strict for auth routes, lighter for others
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -264,6 +275,9 @@ app.get('/', (req, res) => {
     data: {
       env: process.env.NODE_ENV || 'development',
       timestamp: new Date().toISOString(),
+      cors: {
+        enabled: true,
+      },
     },
   });
 });
@@ -276,6 +290,7 @@ app.get('/health', (req, res) => {
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
       database: 'connected',
+      cors: 'enabled',
     },
   });
 });
