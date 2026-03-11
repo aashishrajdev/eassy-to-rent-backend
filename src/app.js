@@ -208,65 +208,23 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
 
-// CORS configuration - FIXED VERSION with your domain
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://localhost:5000',
-  'https://eassy-to-rent-backend.onrender.com',
-  'https://www.easytorent.in',      // Your main domain with www
-  'https://easytorent.in',           // Your domain without www
-  'https://eassy-to-rent-startup.vercel.app', // Your Vercel frontend
-];
-
-// Also check environment variable for additional origins
-if (process.env.CORS_ORIGIN) {
-  const envOrigins = process.env.CORS_ORIGIN.split(',').map(origin => origin.trim());
-  allowedOrigins.push(...envOrigins);
-}
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, Postman, or curl)
-    if (!origin) {
-      return callback(null, true);
-    }
-    
-    // Check if the origin is allowed
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      logger.warn(`CORS blocked origin: ${origin}`);
-      // In development, allow all origins for easier testing
-      if (process.env.NODE_ENV === 'development') {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    }
-  },
+// SIMPLIFIED CORS FOR TESTING - Allow all origins
+app.use(cors({
+  origin: true, // Allow all origins temporarily
   credentials: true,
-  optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 600,
-};
+}));
 
-// Apply CORS middleware
-app.use(cors(corsOptions));
-
-// Handle preflight requests for all routes
-app.options('*', cors(corsOptions));
-
-// Remove the manual headers middleware below - it's redundant and can cause issues
-// The cors() middleware already handles this properly
+// Handle preflight requests
+app.options('*', cors());
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Basic request logger
 app.use((req, res, next) => {
+  console.log(`📡 ${req.method} ${req.url} - Origin: ${req.headers.origin || 'no origin'}`);
   logger.http(`${req.method} ${req.originalUrl}`, {
     origin: req.headers.origin,
     ip: req.ip,
@@ -308,7 +266,7 @@ app.get('/', (req, res) => {
       timestamp: new Date().toISOString(),
       cors: {
         enabled: true,
-        allowedOrigins: allowedOrigins,
+        allowedOrigins: 'all origins temporarily',
       },
     },
   });
