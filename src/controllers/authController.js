@@ -292,7 +292,7 @@ exports.createDefaultAdmin = async (req, res, next) => {
 // @access  Public (one-time setup helper)
 exports.resetAdmin = async (req, res, next) => {
   try {
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@pgfinder.com';
+    const adminEmail = process.env.ADMIN_EMAIL || 'supporteasytorent@gmail.com';
     const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@9876#Secure';
 
     const admin = await User.findOne({ email: adminEmail, role: 'admin' });
