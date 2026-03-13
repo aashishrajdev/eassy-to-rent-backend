@@ -169,162 +169,121 @@
 
 
 
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 
-const connectDB = require('./config/database');
-const pgRoutes = require('./routes/pg');
-const authRoutes = require('./routes/auth');
-const bookingRoutes = require('./routes/bookings');
-const reviewRoutes = require('./routes/reviews');
-const { notFound, errorHandler } = require('./middleware/errorMiddleware');
-const logger = require('./utils/logger');
+const connectDB = require("./config/database");
+const pgRoutes = require("./routes/pg");
+const authRoutes = require("./routes/auth");
+const bookingRoutes = require("./routes/bookings");
+const reviewRoutes = require("./routes/reviews");
+const { notFound, errorHandler } = require("./middleware/errorMiddleware");
+const logger = require("./utils/logger");
 
 const app = express();
 
-// Connect Database
+// connect DB
 connectDB();
 
 
-// Security Middleware
+// security
 app.use(
   helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
     crossOriginEmbedderPolicy: false,
-    crossOriginResourcePolicy: { policy: "cross-origin" }
   })
 );
 
 
-// ✅ Clean CORS Configuration
+// allowed domains
 const allowedOrigins = [
   "https://www.easytorent.in",
   "https://easytorent.in",
   "https://eassy-to-rent-startup.vercel.app",
   "http://localhost:5173",
-  "http://localhost:3000"
+  "http://localhost:3000",
 ];
 
+
+// CORS middleware
 app.use(
   cors({
     origin: function (origin, callback) {
 
-      // allow requests with no origin (mobile apps, postman)
       if (!origin) return callback(null, true);
 
-      if (allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
       }
+
+      return callback(new Error("CORS not allowed"));
     },
+
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
 
-// Body Parser
+// IMPORTANT: handle preflight requests
+app.options("*", cors());
+
+
+// body parser
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 
-// Request Logger
+// logger
 app.use((req, res, next) => {
-  console.log(`📡 ${req.method} ${req.url} - Origin: ${req.headers.origin || "no origin"}`);
-
-  logger.http(`${req.method} ${req.originalUrl}`, {
-    origin: req.headers.origin,
-    ip: req.ip,
-  });
-
+  console.log(`📡 ${req.method} ${req.url}`);
   next();
 });
 
 
-// Global Rate Limit
-const globalLimiter = rateLimit({
+// rate limiter
+const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: "Too many requests from this IP, please try again after 15 minutes",
-  skip: (req) => req.path.startsWith("/health") || req.path === "/",
 });
 
-app.use(globalLimiter);
+app.use(limiter);
 
 
-// Auth Rate Limit
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: "Too many authentication attempts, please try again after 15 minutes",
-    data: {},
-  },
-  skipSuccessfulRequests: true,
-});
-
-app.use("/api/auth", authLimiter);
-
-
-// Root Endpoint
-app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message: "PG Finder API",
-    data: {
-      env: process.env.NODE_ENV || "development",
-      timestamp: new Date().toISOString(),
-    },
-  });
-});
-
-
-// Health Check
-app.get("/health", (req, res) => {
-  res.json({
-    success: true,
-    message: "OK",
-    data: {
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
-      database: "connected",
-    },
-  });
-});
-
-
-// API Routes
+// routes
 app.use("/api/pg", pgRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/reviews", reviewRoutes);
 
 
-// 404 Handler
+// root
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "PG Finder API Running",
+  });
+});
+
+
+// health
+app.get("/health", (req, res) => {
+  res.json({
+    success: true,
+    message: "Server OK",
+  });
+});
+
+
+// 404
 app.use(notFound);
 
 
-// Error Handler
+// error handler
 app.use(errorHandler);
-
-
-// Handle unhandled promise rejections
-process.on("unhandledRejection", (err) => {
-  logger.error("Unhandled Rejection:", err);
-});
-
-
-// Handle uncaught exceptions
-process.on("uncaughtException", (err) => {
-  logger.error("Uncaught Exception:", err);
-});
 
 
 module.exports = app;
