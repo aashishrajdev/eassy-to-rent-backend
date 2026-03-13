@@ -169,7 +169,6 @@
 
 
 
-
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -185,136 +184,147 @@ const logger = require('./utils/logger');
 
 const app = express();
 
-// Database
+// Connect Database
 connectDB();
 
-// Core middleware
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-}));
 
-// SIMPLE CORS - This is the key change
-app.use(cors({
-  origin: true, // Allow all origins
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-}));
+// Security Middleware
+app.use(
+  helmet({
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+  })
+);
 
-// Handle preflight requests
-app.options('*', cors());
 
-// Add these headers to be absolutely sure
+// ✅ Clean CORS Configuration
+const allowedOrigins = [
+  "https://www.easytorent.in",
+  "https://easytorent.in",
+  "https://eassy-to-rent-startup.vercel.app",
+  "http://localhost:5173",
+  "http://localhost:3000"
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+
+      // allow requests with no origin (mobile apps, postman)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+  })
+);
+
+
+// Body Parser
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+
+// Request Logger
 app.use((req, res, next) => {
-  const allowedOrigins = [
-    'https://www.easytorent.in',
-    'https://easytorent.in',
-    'https://eassy-to-rent-startup.vercel.app',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ];
-  
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-  
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
-  
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  
-  next();
-});
+  console.log(`📡 ${req.method} ${req.url} - Origin: ${req.headers.origin || "no origin"}`);
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Basic request logger
-app.use((req, res, next) => {
-  console.log(`📡 ${req.method} ${req.url} - Origin: ${req.headers.origin || 'no origin'}`);
   logger.http(`${req.method} ${req.originalUrl}`, {
     origin: req.headers.origin,
     ip: req.ip,
   });
+
   next();
 });
 
-// Rate limiting - more strict for auth routes, lighter for others
+
+// Global Rate Limit
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: 'Too many requests from this IP, please try again after 15 minutes',
-  skip: (req) => req.path.startsWith('/health') || req.path === '/',
+  message: "Too many requests from this IP, please try again after 15 minutes",
+  skip: (req) => req.path.startsWith("/health") || req.path === "/",
 });
 
 app.use(globalLimiter);
 
-// Stricter rate limiter for auth routes
+
+// Auth Rate Limit
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: 'Too many authentication attempts, please try again after 15 minutes', data: {} },
+  message: {
+    success: false,
+    message: "Too many authentication attempts, please try again after 15 minutes",
+    data: {},
+  },
   skipSuccessfulRequests: true,
 });
 
-app.use('/api/auth', authLimiter);
+app.use("/api/auth", authLimiter);
 
-// Health / root endpoints
-app.get('/', (req, res) => {
+
+// Root Endpoint
+app.get("/", (req, res) => {
   res.json({
     success: true,
-    message: 'PG Finder API',
+    message: "PG Finder API",
     data: {
-      env: process.env.NODE_ENV || 'development',
+      env: process.env.NODE_ENV || "development",
       timestamp: new Date().toISOString(),
-      cors: {
-        enabled: true,
-      },
     },
   });
 });
 
-app.get('/health', (req, res) => {
+
+// Health Check
+app.get("/health", (req, res) => {
   res.json({
     success: true,
-    message: 'OK',
+    message: "OK",
     data: {
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
-      database: 'connected',
-      cors: 'enabled',
+      database: "connected",
     },
   });
 });
 
-// Routes
-app.use('/api/pg', pgRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/bookings', bookingRoutes);
-app.use('/api/reviews', reviewRoutes);
 
-// 404 handler
+// API Routes
+app.use("/api/pg", pgRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/bookings", bookingRoutes);
+app.use("/api/reviews", reviewRoutes);
+
+
+// 404 Handler
 app.use(notFound);
 
-// Error handler (should be last)
+
+// Error Handler
 app.use(errorHandler);
 
+
 // Handle unhandled promise rejections
-process.on('unhandledRejection', (err) => {
-  logger.error('Unhandled Rejection:', err);
+process.on("unhandledRejection", (err) => {
+  logger.error("Unhandled Rejection:", err);
 });
 
+
 // Handle uncaught exceptions
-process.on('uncaughtException', (err) => {
-  logger.error('Uncaught Exception:', err);
+process.on("uncaughtException", (err) => {
+  logger.error("Uncaught Exception:", err);
 });
+
 
 module.exports = app;
